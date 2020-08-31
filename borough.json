@@ -1,0 +1,23 @@
+{"Midlothian":
+    {
+      "url_base" : "https://planning-applications.midlothian.gov.uk/OnlinePlanning",
+      "url_for_case_base" : "https://planning-applications.midlothian.gov.uk", 
+      "borough_name" : "Midlothian" 
+      
+      },
+  "Edinburgh":
+      {
+          "url_base" : "https://citydev-portal.edinburgh.gov.uk/idoxpa-web",
+          "url_for_case_base" : "https://citydev-portal.edinburgh.gov.uk",
+          "borough_name" :"Edinburgh"
+         
+      },
+    "Barnet":
+    {
+        "url_base": "https://publicaccess.barnet.gov.uk/online-applications",
+        "url_for_case_base" : "https://publicaccess.barnet.gov.uk",
+        "borough_name" : "Barnet"
+    }
+  
+      }
+  
