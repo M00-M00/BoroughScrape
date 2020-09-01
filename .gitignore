@@ -12,4 +12,5 @@
 /test.json
 /venv
 /data.json
+*.xlsx
 /__pycache__
