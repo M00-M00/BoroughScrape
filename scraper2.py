@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from os import path
 import os.path
+from xlsxwriter.workbook import Workbook
+import glob
 
 class Scraper():
     
@@ -30,7 +32,7 @@ class Scraper():
 
         self.s = requests.Session()
 
-        self.csv_columns = ["reference", "alternative reference", "address", "proposal", "status", "applicant name", "agent name", "agent address", "agent phone number", "agent email", "application received", "application validated"]
+        self.csv_columns = ["reference", "alternative reference", "address", "proposal", "status", "applicant name", "agent name", "agent address", "agent phone number", "agent email", "application received", "application validated", "decision issued data", "decision"]
 
         self.weeks = {}
 
@@ -44,12 +46,11 @@ class Scraper():
 
         self.weeks_results = {}
 
-
         self.csv_file = self.borough_name + ".csv"
 
-        self.weeks = {}
-
         self.done_case = []
+
+        self.search_scrape_failed_cases = []
 
         self.get_week_selection()
 
@@ -64,7 +65,7 @@ class Scraper():
         
         self.get_done_case_numbers()
 
-#weeks
+#weeks scraping
 
     def get_week_selection(self):  
         start_search = self.s.get(self.url_start)
@@ -74,7 +75,7 @@ class Scraper():
             week = w["value"]
             if week not in self.weeks:
                 self.weeks[week] = {}
-                self.weeks[week]["week_complete"] = False
+                self.weeks[week] = {"week_complete" : False, "total_cases" : None, "cases_added" : 0}
             self.weeks_selection.append(w["value"])
     
 
@@ -98,6 +99,8 @@ class Scraper():
 
     #Scrapes soup of all pages for search results for a week
 
+
+
     def scrape_weekly_search_results(self, week):
         page_number = 1
         self.weeks_results[week] = []
@@ -114,23 +117,33 @@ class Scraper():
     def get_cases_from_weekly_search(self, week):
         cases_added = 0
         for case in self.weeks_results[week]:
+            try:
                 case_number = case.find_all("p")[1].text.replace("\n", "").replace("  ", "").replace("\r", "").split("|")[0].split(":")[1]
                 validated = case.find_all("p")[1].text.replace("\n", "").replace("  ", "").replace("\r", "").split("|")[2].split(":")[1]
                 link = case.a["href"]
                 self.cases[case_number] = {"application validated": validated, "url" : link, "refence": case_number}
                 cases_added += 1
-        self.weeks[week]["cases_added"] = cases_added 
+            except:
+                self.search_scrape_failed_cases.append(case)
+        self.weeks[week]["cases_added"] = cases_added
+        self.check_if_weekly_search_complete(week)
+
+
+
 
 
 
     def get_cases_from_all_weeks(self):
         self.get_week_selection()
         for week in self.weeks_selection:
-            self.search_for_week_start(week)
-            self.scrape_weekly_search_results(week)
-            self.get_cases_from_weekly_search(week)
-            print(week + " added to json")
-            self.update_json_file()
+            self.check_if_weekly_search_complete(week)
+            if self.weeks[week]["week_complete"] == False:
+                self.search_for_week_start(week)
+                self.scrape_weekly_search_results(week)
+                self.get_cases_from_weekly_search(week)
+                print(week + " added to json")
+                self.update_json_file()
+
 
 
 
@@ -145,6 +158,7 @@ class Scraper():
                 writer.writeheader()
         except IOError:
             print("I/O error")
+
         
     def overwrite_csv(self):
         try:
@@ -153,6 +167,10 @@ class Scraper():
                 writer.writeheader()
         except IOError:
             print("I/O error")
+
+
+
+
 
     def _dict_to_csv(self, dictionary):
         try:
@@ -182,6 +200,30 @@ class Scraper():
             json.dump(self.json_data, outfile)
 
 
+            
+
+    def csv_to_excel(self):
+        for self.csv_file in glob.glob(os.path.join('.', '*.csv')):
+                workbook = Workbook(self.csv_file[:-4] + '.xlsx')
+                worksheet = workbook.add_worksheet()
+                red = workbook.add_format()
+                red.set_bg_color("#FF0000")
+                green = workbook.add_format()
+                green.set_bg_color('#008000')
+                yellow = workbook.add_format()
+                yellow.set_bg_color('#FFFF00')
+                with open(self.csv_file, 'rt') as f:
+                    reader = csv.reader(f)
+                    for r, row in enumerate(reader):
+                        for c, col in enumerate(row):
+                            worksheet.write(r, c, col)
+                worksheet.write_row("A1:E1", self.csv_columns[0:5], red)
+                worksheet.write_row("F1:J1", self.csv_columns[5:10], green)
+                worksheet.write_row("K1:N1", self.csv_columns[10:], yellow)
+                workbook.close()
+
+
+
 #Check weeks
 
     def check_if_weekly_search_complete(self,week):
@@ -198,7 +240,7 @@ class Scraper():
 
 
 
-
+#Scrape Cases
 
 
     def scrape_case_to_csv(self, case):
@@ -221,7 +263,7 @@ class Scraper():
     def scrape_cases_within_dates(self, start, end):
 
         df = pd.DataFrame.from_dict(self.cases, orient = "index", columns=["url", "application validated"])
-
+        df["datetime"] =  [self.string_date_to_datetime(i) for i in df["application validated"]]
         end_date = self.string_date_to_datetime(end)
         start_date = self.string_date_to_datetime(start)
         end_64 = np.datetime64(end_date)
@@ -232,6 +274,8 @@ class Scraper():
 
         for case in case_list:
             self.scrape_case_to_csv(case)
+
+
 
 
 #Scraping Individual Cases
@@ -303,12 +347,20 @@ class Scraper():
 
 
 
-
+# misc
 
 
 
     def string_date_to_datetime(self, string):
-        if len(string) > 11:
+        if "-" in string:
+            string = string.replace("-", " ")
+        if "_" in string:
+            string = string.replace("_", " ")
+
+        if string.replace(" ","").isdigit():
+
+            date = datetime.strptime(string, "%d %m %Y")
+        elif len(string) > 11:
             date = datetime.strptime(string[4:], "%d %b %Y")
         else:
             date = datetime.strptime(string, "%d %b %Y")
@@ -321,8 +373,9 @@ class Scraper():
         self.done_cases = done_case_numbers
 
 
-        
 
+        
+#redundand
 
     def get_cases_dataframe_within_weeklimit(self, start_date, end_date):
 
@@ -391,3 +444,12 @@ class Scraper():
         self.test_weeks = weeks_to_scrape
 
 
+"""for csvfile in glob.glob(os.path.join('.', '*.csv')):
+    workbook = Workbook(csvfile[:-4] + '.xlsx')
+    worksheet = workbook.add_worksheet()
+    with open(csvfile, 'rt') as f:
+        reader = csv.reader(f)
+        for r, row in enumerate(reader):
+            for c, col in enumerate(row):
+                worksheet.write(r, c, col)
+    workbook.close()"""

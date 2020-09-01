@@ -7,12 +7,12 @@ import numpy as np
 import pandas as pd
 from os import path
 import os.path
+from Scraper2 import Scraper
+
+csv = {'Applicant Name', 'Agent Name', 'Agent Address', 'Proposal', 'M3 Unique Case No' , 'Date Received', 'Decision Date', 'Premises Address', 'Application Address', 'Case No', 'Alternative Ref','Registered Date'}
 
 
-{'Applicant Name', 'Agent Name', 'Agent Address', 'Proposal', 'M3 Unique Case No' , 'Date Received', 'Decision Date', 'Premises Address', 'Application Address', 'Case No', 'Alternative Ref','Registered Date'}
-
-
-class Harrow():
+class Harrow(Scraper):
 
     def __init__(self):
 
@@ -70,45 +70,3 @@ class Harrow():
                 continue
             
 
-
-
-    def write_header(self):
-        
-        try:
-            with open(self.csv_file, "a") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=self.csv_columns)
-                writer.writeheader()
-        except IOError:
-            print("I/O error")
-        
-    def overwrite_csv(self):
-        try:
-            with open(self.csv_file, "w") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=self.csv_columns)
-                writer.writeheader()
-        except IOError:
-            print("I/O error")
-
-    def _dict_to_csv(self, dictionary):
-        try:
-            with open(self.csv_file, "a") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=self.csv_columns)
-                writer.writerow(dictionary)
-        except IOError:
-            print("I/O error")
-
-    def load_cases_data_from_json(self):
-        with open("data.json") as j:
-            self.json_data = json.load(j)
-            try:
-                self.weeks = self.json_data[self.borough_name]["week"]
-                self.cases = self.json_data[self.borough_name]["cases"]
-                
-            except Exception as e:
-                self.json_data[self.borough_name] = {"week": self.weeks, "cases": self.cases}
-                print("Created Borough in JSON file as " + str(e))
-
-    def update_json_file(self):
-        with open("data.json", "w") as outfile:
-            self.json_data[self.borough_name] = {"week": self.weeks, "cases": self.cases}
-            json.dump(self.json_data, outfile)
