@@ -7,10 +7,10 @@ import numpy as np
 import pandas as pd
 from os import path
 import os.path
-from scraper2 import Scraper
+from Scraper2 import Scraper
 
 
-class HaringeyScraper(Scraper):
+class Haringey(Scraper):
 
     def __init__(self):
         self.borough_name = "Haringey"
@@ -20,6 +20,7 @@ class HaringeyScraper(Scraper):
         self.cases = []
         self.search_data = {"ValidDateFrom":"11-05-2020","ValidDateTo":"15-05-2020"}
         self.next_page = {"LAST_ROW_ID":20,"DIRECTION":"F","RECORDS":20,"forward":"Next+Matching+Results"}  
+        self.csv_columns = ["reference", "site_address", "proposal", "applicatnt_name", "agent_address", "agent_name" , 'agent_address', "app_received_date", "status", "consulation_end_date", "application_decision_date"]
         self.s = requests.Session()
         self.csv_file = self.borough_name + ".csv"
         if os.path.exists(self.csv_file) == False:
@@ -55,7 +56,7 @@ class HaringeyScraper(Scraper):
         for tr in self.cases_to_scrape:
             tds = tr.find_all("td")
             case = {}
-            case["case_number"] = tds[0].text 
+            case["reference"] = tds[0].text 
             link = self.first_part_url + tds[0].a["href"][3:]
             case["site_address"] = tds[1].text 
             case["proposal"] = tds[5].text
@@ -70,12 +71,30 @@ class HaringeyScraper(Scraper):
             case["agent_name"] = case_trs[8].find_all("td")[3].input["value"]
             case["applicant_address"] = case_trs[9].find_all("td")[1].text
             case["agent_address"] = case_trs[9].find_all("td")[3].text
-            self.cases[case["case_number"]] = case
+            self.cases[case["reference"]] = case
                 
+
+    def convert_date(self,date):
+        if "_" in date:
+            date = date.replace("_", "-")
+        if " " in date:
+            date = date.replace(" ", "-")
+
+        if date.replace("-", "").isdigit() == False:
+            d = date.split("-")
+            if len(d[1]) == 3:
+                month = datetime.strptime(d[1],"%b").month 
+            else:
+                month = datetime.strptime(d[1],"%B").month 
+            date = d[0] + "-"  + str(month).zfill(2) + "-" +  d[2]
+
+        return date 
 
     
     def scape_search_results(self, start, end):
         # date format 15-05-2020
+        start = self.convert_date(start)
+        end = self.convert_date(end)
         self.s.get(self.search_url)
         s = requests.Session()
         cases_first_20 = s.post(self.search_url, {"ValidDateFrom": start,"ValidDateTo": end})
@@ -95,7 +114,7 @@ class HaringeyScraper(Scraper):
 
                 form2 = next_page_soup.table.find("form",{"name": "navigationForm2"})
                 last_row_id += 20
-                #WHILE LOOP FOR FORM2?
+
             
         
 
