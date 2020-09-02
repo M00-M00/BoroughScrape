@@ -22,6 +22,7 @@ class Haringey(Scraper):
         self.next_page = {"LAST_ROW_ID":20,"DIRECTION":"F","RECORDS":20,"forward":"Next+Matching+Results"}  
         self.csv_columns = ["reference", "site_address", "proposal", "applicatnt_name", "agent_address", "agent_name" , 'agent_address', "app_received_date", "status", "consulation_end_date", "application_decision_date"]
         self.s = requests.Session()
+        self.date_symbol = "-"
         self.csv_file = self.borough_name + ".csv"
         if os.path.exists(self.csv_file) == False:
             self.write_header()
@@ -79,6 +80,8 @@ class Haringey(Scraper):
             date = date.replace("_", "-")
         if " " in date:
             date = date.replace(" ", "-")
+        if "/" in date:
+            date = date.replace("/", "-")
 
         if date.replace("-", "").isdigit() == False:
             d = date.split("-")

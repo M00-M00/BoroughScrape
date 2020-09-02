@@ -24,11 +24,17 @@ class Scraper():
 
             self.url_for_case_base = data[self.borough_name]["url_for_case_base"]
 
+
+
         self.url_start = self.url_base + "/search.do?action=weeklyList"
 
         self.url_search_start =  self.url_base + "/weeklyListResults.do?action=firstPage"
 
         self.url_paged_results = self.url_base + "/pagedSearchResults.do"
+
+        self.url_search_advanced = self.url_base + "/search.do?action=advanced"
+
+        self.url_results_advanced = self.url_base + '/advancedSearchResults.do?action=firstPage'
 
         self.s = requests.Session()
 
@@ -48,13 +54,15 @@ class Scraper():
 
         self.csv_file = self.borough_name + ".csv"
 
+        self.excel_file = self.borough_name + ".xlsx"
+
         self.done_case = []
+
+        self.date_symbol = "/"
 
         self.search_scrape_failed_cases = []
 
         self.get_week_selection()
-
-        #self.write_header()
 
         self.failed_cases = []
 
@@ -62,10 +70,12 @@ class Scraper():
 
         if os.path.exists(self.csv_file) == False:
             self.write_header()
-        
-        self.get_done_case_numbers()
 
-#weeks scraping
+        print("ready!")
+        
+
+
+#weeks scraping can be combined
 
     def get_week_selection(self):  
         start_search = self.s.get(self.url_start)
@@ -133,21 +143,8 @@ class Scraper():
 
 
 
-    def get_cases_from_all_weeks(self):
-        self.get_week_selection()
-        for week in self.weeks_selection:
-            self.check_if_weekly_search_complete(week)
-            if self.weeks[week]["week_complete"] == False:
-                self.search_for_week_start(week)
-                self.scrape_weekly_search_results(week)
-                self.get_cases_from_weekly_search(week)
-                print(week + " added to json")
-                self.update_json_file()
 
-
-
-
-#CSV JSONv
+#CSV JSON Excel
 
 
     def write_header(self):
@@ -240,40 +237,74 @@ class Scraper():
 
 
 
-#Scrape Cases
+#Scrape Cases Mode
+
+    
 
 
-    def scrape_case_to_csv(self, case):
-        if case not in self.done_cases:
-                try:
-                    self.scrape_case_from_url(self.cases[case]["url"])
-                except Exception:
-                    if case not in self.failed_cases:
-                        self.failed_cases.append(case)
-
-
-
-
-    def scrape_all_cases_to_csv(self):
+    def get_cases_from_all_weeks(self):
+        self.get_week_selection()
+        for week in self.weeks_selection:
+            self.check_if_weekly_search_complete(week)
+            if self.weeks[week]["week_complete"] == False:
+                self.search_for_week_start(week)
+                self.scrape_weekly_search_results(week)
+                self.get_cases_from_weekly_search(week)
+                print(week + " added to json")
+                self.update_json_file()
         for case in self.cases:
             self.scrape_case_to_csv(case)
 
 
 
-    def scrape_cases_within_dates(self, start, end):
+    def add_new_cases(self):
+        self.get_latest_done_date()
+        self.scrape_search_within_dates(self.string_latest_date, self.string_today)
 
-        df = pd.DataFrame.from_dict(self.cases, orient = "index", columns=["url", "application validated"])
-        df["datetime"] =  [self.string_date_to_datetime(i) for i in df["application validated"]]
-        end_date = self.string_date_to_datetime(end)
-        start_date = self.string_date_to_datetime(start)
-        end_64 = np.datetime64(end_date)
-        start_64 = np.datetime64(start_date)
 
-        cases_in_range = df.loc[df["datetime"].between(start_64, end_64, inclusive= True)]
-        case_list = cases_in_range.axes[0].tolist()
 
-        for case in case_list:
-            self.scrape_case_to_csv(case)
+    def scrape_search_within_dates(self, start, end):
+
+        search = self.s.get(self.url_search_advanced)
+        start = self.convert_date(start)
+        end = self.convert_date(end)
+        self.search_results = []
+
+        search_start_data = {'date(applicationValidatedStart)': start, 'date(applicationValidatedEnd)': end, 'searchType': 'Application'}
+        search_start = self.s.post(self.url_search_start, data = search_start_data)
+        search_soup = bs(search_start.text, "lxml")
+        searchResultsContainer_soup = search_soup.find_all(id = "searchResultsContainer")[0]
+        total_of = searchResultsContainer_soup.span.text
+        if total_of != None:
+            total_cases_for_search = int(total_of.split(" of ")[1])
+        else:
+            total_cases_for_search = len(searchResultsContainer_soup.find_all("li"))
+        
+        total = total_cases_for_search
+        page_number = 1
+        self.get_done_cases_search_period(start, end)
+        for page in range(0, total, 100):
+            search_criteria_data = {"searchCriteria.page": page_number,"action": "page","orderBy": "DateReceived","orderByDirection": "Descending", "searchCriteria.resultsPerPage": "100"}
+            next_page = self.s.post(self.url_paged_results, data = search_criteria_data)
+            next_page_soup = bs(next_page.text, "lxml")
+            next_page_results_soup = next_page_soup.find_all(id = "searchresults")[0].find_all("li")
+            self.search_results.extend(next_page_results_soup)
+            page_number += 1
+
+        self.get_done_cases_search_period(start, end)
+        for case in self.search_results:
+            try:
+                case_number = case.find_all("p")[1].text.replace("\n", "").replace("  ", "").replace("\r", "").split("|")[0].split(":")[1]
+                link = case.a["href"]
+                if case_number not in self.search_done_cases:
+                    try:
+                        self.scrape_case_from_url(link)
+                    except Exception:
+                        if case not in self.failed_cases:
+                            self.failed_cases.append(case)
+            except:
+                self.search_scrape_failed_cases.append(case)
+
 
 
 
@@ -289,6 +320,15 @@ class Scraper():
         return case
 
 
+
+    def scrape_case_to_csv(self, case):
+        self.get_done_case_numbers()
+        if case not in self.done_cases:
+                try:
+                    self.scrape_case_from_url(self.cases[case]["url"])
+                except Exception:
+                    if case not in self.failed_cases:
+                        self.failed_cases.append(case)
 
  
 
@@ -336,18 +376,7 @@ class Scraper():
 
 
 
-
-    def check_for_new_cases_latest_week(self):
-        week = self.weeks_selection[0]
-        if week in self.weeks and self.weeks["week_complete"] == True:
-            old_total = self.weeks[week]["total_cases"]
-            self.search_for_week_start(week)
-            if self.weeks[week]["cases_added"] < self.weeks[week]["total_cases"]:
-                self.weeks[week]["week_complete"] = "missing some weeks"
-
-
-
-# misc
+# DATETIME 
 
 
 
@@ -356,10 +385,12 @@ class Scraper():
             string = string.replace("-", " ")
         if "_" in string:
             string = string.replace("_", " ")
+        if "/" in string:
+            string = string.replace("/", " ")
 
         if string.replace(" ","").isdigit():
 
-            date = datetime.strptime(string, "%d %m %Y")
+            date = datetime.strptime(string, "%d-%m-%Y")
         elif len(string) > 11:
             date = datetime.strptime(string[4:], "%d %b %Y")
         else:
@@ -367,89 +398,49 @@ class Scraper():
         return date
 
 
+    def convert_date(self,date):
+        symbols = ("_", "/", "-", ".", ",","|","\\")
+        s = self.date_symbol
+        old_s = [s for s in symbols if (s in date)][0]
+        date = date.replace(old_s, s)   
+        if date.replace(s, "").isdigit() == False:
+            d = date.split(s)
+            if len(d[1]) == 3:
+                month = datetime.strptime(d[1],"%b").month 
+            else:
+                month = datetime.strptime(d[1],"%B").month 
+            date = d[0] + s  + str(month).zfill(2) + s +  d[2]
+        return date 
+    
+    
+# Data from Excel
+
+
     def get_done_case_numbers(self):
-        df = pd.read_csv(self.csv_file, skiprows=0)
-        done_case_numbers = df["reference"].values
-        self.done_cases = done_case_numbers
+        df = pd.read_excel(self.excel_file, skiprows=0)
+        df = df.dropna(how = "all").reset_index().drop(["index"], axis = 1)
+        self.done_cases = df["reference"].values
 
-
-
-        
-#redundand
-
-    def get_cases_dataframe_within_weeklimit(self, start_date, end_date):
-
-        df = pd.DataFrame.from_dict(self.cases, orient = "index", columns=["url", "application validated"])
+    def get_done_cases_search_period(self,start, end):
+        df = pd.read_excel(self.excel_file, skiprows=0)
+        df = df.dropna(how = "all").reset_index().drop(["index"], axis = 1)
         df["datetime"] =  [self.string_date_to_datetime(i) for i in df["application validated"]]
+        s = self.date_symbol
 
-
-        end = self.string_date_to_datetime(end_date)
-        start = self.string_date_to_datetime(start_date)
-        end_64 = np.datetime64(end)
-        start_64 = np.datetime64(start)
-
-        cases_in_range = df.loc[df["datetime"].between(start_64, end_64, inclusive= True)]
-        case_list = cases_in_range.axes[0].tolist()
-
-        self.case_list = case_list
+        start = self.convert_date(start)
+        end = self.convert_date(end)
+        start = datetime.strptime(start, "%d" + s + "%m" + s +  "%Y")
+        end = datetime.strptime(end, "%d" + s + "%m" + s +"%Y")
+        df2 =  df[df["datetime"].between(e,s, inclusive = True)]["reference"].reset_index().drop(["index"],axis=1)
+        self.search_done_cases = df2.values
 
 
 
-
-    def add_new_cases(self):
-        df = pd.read_csv(self.csv_file, skiprows=0)
+    def get_latest_done_date(self):
+        df = pd.read_excel(self.excel_file, skiprows=0)
+        df = df.dropna(how = "all").reset_index().drop(["index"], axis = 1)
         df["datetime"] =  [self.string_date_to_datetime(i) for i in df["application validated"]]
-        last_date = df["datetime"].max()
-        last_week_num = last_date.isocalendar()[1]
-        weeks_to_scrape = {}
-        for w in self.weeks_selection:
-            w_num = datetime.strptime(w, "%d %b %Y").isocalendar()[1] 
-            if w_num >= last_week_num:
-                weeks_to_scrape[w] = w_num
-            else:
-                break
-
-        self.new_weeks = weeks_to_scrape
-        for w in weeks_to_scrape:
-                self.search_for_week_start(w)
-                self.scrape_weekly_search_results(w)
-                self.get_cases_from_weekly_search(w)
-
-
-        df = pd.DataFrame.from_dict(self.cases, orient = "index", columns=["url", "application validated"])
-        df["datetime"] =  [self.string_date_to_datetime(i) for i in df["application validated"]]
-        cases_in_range = df.loc[df["datetime"] >= last_date]
-        case_list = cases_in_range.axes[0].tolist()
-        for case in case_list:
-            self.scrape_case_to_csv(case)
-
-
-
-    def test_cases(self, date):
-        df = pd.read_csv(self.csv_file, skiprows=0)
-        df["datetime"] =  [self.string_date_to_datetime(i) for i in df["application validated"]]
-
-        d = self.string_date_to_datetime(date)
-
-
-        last_week_num = d.isocalendar()[1]
-        weeks_to_scrape = {}
-
-        for w in self.weeks_selection:
-            w_num = datetime.strptime(w, "%d %b %Y").isocalendar()[1] 
-            if w_num >= last_week_num:
-                weeks_to_scrape[w] = w_num
-            else:
-                break
-        self.test_weeks = weeks_to_scrape
-
-
-"""for csvfile in glob.glob(os.path.join('.', '*.csv')):
-    workbook = Workbook(csvfile[:-4] + '.xlsx')
-    worksheet = workbook.add_worksheet()
-    with open(csvfile, 'rt') as f:
-        reader = csv.reader(f)
-        for r, row in enumerate(reader):
-            for c, col in enumerate(row):
-                worksheet.write(r, c, col)
-    workbook.close()"""
+        self.datetime_latest_date = df["datetime"].max()
+        s = self.date_symbol
+        self.string_latest_date =  self.datetime_latest_date.strftime("%d" + s + "%m" + s  +"%Y")
+        self.string_today = datetime.now().strftime("%d" + s + "%m" + s +"%Y")
