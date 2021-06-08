@@ -5,4 +5,4 @@ CLI is to be added, at the moment most websites (all apart from Harrow) can be p
 or for all cases available in weekly search (Midlothian, Barnet, Ediburgh).
 More sites to be added too.
 
-this freelance project involved working with  http requests, HTML/DOM, BeautifulSoup, data structures, json / csv / pandas df, Python OOP, datetime
+http requests, HTML/DOM, BeautifulSoup, data structures, json / csv / pandas df, Python OOP, datetime
